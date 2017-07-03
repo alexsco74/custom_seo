@@ -1,0 +1,479 @@
+<?php
+
+/**
+ * @file
+ * Custom seo function module
+ */
+
+/**
+ * fix simplemeta must be overwrite metatag
+ */
+function custom_seo_html_head_alter(&$head_elements) {
+  foreach ($head_elements as $key => $element) {
+    $meta = str_replace('metatag_', '', $key);
+    if (isset($head_elements['simplemeta_' . $meta])) {
+      unset($head_elements[$key]);
+    }
+  }
+}
+
+function custom_seo_process_page(&$variables) {
+  // h1
+  if (strpos(current_path(), 'catalog/') === 0) {
+    $trade_page_title = FALSE;
+    if (module_exists('trade_page_title')) {
+      $record = db_query('SELECT * FROM {trade_page_title} WHERE uri = :u', array(
+        ':u' => current_path(),
+      ))->fetchObject();
+
+      if (!empty($record->body)) {
+        $trade_page_title = TRUE;
+      }
+    }
+
+    if (!$trade_page_title && ($tag = _custom_seo_get_page_catalog_tag('h1'))) {
+      $variables['title'] = $tag;
+    }
+  }
+}
+
+function custom_seo_process_html(&$variables) {
+  global $language, $trade_product_number, $trade_catalog_filters;
+
+
+  //set page title
+  if (strpos(current_path(), 'catalog/') === 0) {
+
+    //title
+    if (function_exists('simplemeta_get_page_meta')) {
+      if ($meta = simplemeta_get_page_meta($_GET['q'], $language->language)) {
+        if (!empty($meta->data['title'])) {
+          $meta_title = $meta->data['title'];
+        }
+      }
+    }
+    if (!isset($meta_title)) {
+      if ($tag = _custom_seo_get_page_catalog_tag('title')) {
+        $variables['head_title'] = $tag;
+      }
+    }
+
+    //custom block inline template variable rewrite
+    if (!empty($variables['page'])) {
+      $template_variables_value = array();
+      foreach (_custom_seo_template_variables() as $var_token => $desc) {
+        $token_value = '';
+        switch ($var_token) {
+          case 'custom_seo:title':
+            if (isset($variables['head_title'])) {
+              $head_title = $variables['head_title'];
+              $head_title_ex = explode(' ', $head_title);
+              if (is_array($head_title_ex)) {
+                $head_title_ex[0] = drupal_strtolower($head_title_ex[0]);
+                $head_title = implode(' ', $head_title_ex);
+              }
+              $token_value = $head_title;
+            }
+            break;
+          case 'custom_seo:genitive_title':
+
+            if (isset($variables['head_title'])) {
+              $head_title = $variables['head_title'];
+              $catalog_term = trade_catalog_term_load(current_path());
+              if (!empty($catalog_term)) {
+                if (isset($catalog_term->field_catalog_genitive)) {
+                  $catalog_term_field_catalog_genitive = $catalog_term->field_catalog_genitive;
+                  if (!empty($catalog_term_field_catalog_genitive[LANGUAGE_NONE][0]['value'])) {
+                    $head_title = str_replace($catalog_term->name, $catalog_term_field_catalog_genitive[LANGUAGE_NONE][0]['value'], $head_title);
+                  }
+                }
+              }
+              $head_title_ex = explode(' ', $head_title);
+              if (is_array($head_title_ex)) {
+                $head_title_ex[0] = drupal_strtolower($head_title_ex[0]);
+                $head_title = implode(' ', $head_title_ex);
+              }
+              $token_value = $head_title;
+            }
+            break;
+
+          case 'custom_seo:filter_price':
+
+            $from_value = '';
+            if (!empty($trade_catalog_filters['price']['price__from']['default_value'])) {
+              $from_value = $trade_catalog_filters['price']['price__from']['default_value'];
+            }
+            elseif (!empty($trade_catalog_filters['price']['price__from']['placeholder'])) {
+              $from_value = $trade_catalog_filters['price']['price__from']['placeholder'];
+            }
+            if (!empty($from_value)) {
+              $token_value .= ' от ' . _trade_format_number($from_value);
+            }
+
+            $to_value = '';
+            if (!empty($trade_catalog_filters['price']['price__to']['default_value'])) {
+              $to_value = $trade_catalog_filters['price']['price__to']['default_value'];
+            }
+            elseif (!empty($trade_catalog_filters['price']['price__to']['placeholder'])) {
+              $to_value = $trade_catalog_filters['price']['price__to']['placeholder'];
+            }
+            if (!empty($to_value)) {
+              $token_value .= ' до ' . _trade_format_number($to_value);
+            }
+            if (!empty($token_value)) {
+              $currency = _trade_get_currency(variable_get('trade_currency', 'RUB'));
+              $token_value .= (' ' . $currency[1]);
+            }
+            break;
+
+          case 'custom_seo:product_num':
+            $token_value = !empty($trade_product_number) ? $trade_product_number : '';
+            break;
+
+          case 'custom_seo:product_num_psc':
+            $token_value = !empty($trade_product_number) ? $trade_product_number : '';
+            if (!empty($token_value)) {
+              $token_value = format_plural($token_value, '@count trade product', '@count trade products');
+            }
+            break;
+        }
+        $template_variables_value['[' . $var_token . ']'] = $token_value;
+      }
+      $variables['page'] = str_replace(array_keys($template_variables_value), array_values($template_variables_value), $variables['page']);
+      //remove 'руб..'
+      $variables['page'] = str_replace('руб..', 'руб.', $variables['page']);
+    }
+  }
+
+  //add settings form
+  if (!empty($variables['page']) && !path_is_admin(current_path()) && _custom_seo_custom_use_this_path()) {
+    if (user_access('administer site configuration')) {
+      $form_var = drupal_get_form('custom_seo_custom_settings_form');
+      $variables['page'] .= drupal_render($form_var);
+    }
+  }
+}
+
+function _custom_seo_template_variables() {
+  global $language;
+  $ru = $language->language == 'ru';
+  $tokens_list = array(
+    'custom_seo:title' => array(t('Page title'), ' = [custom_seo:title]'),
+    'custom_seo:genitive_title' => array(
+      $ru ? t('Заголовок страницы (родительный падеж)') : t('Page title'),
+      ' = [custom_seo:genitive_title]'
+    ),
+    'custom_seo:filter_price' => array(
+      t('Catalog filter price range'),
+      ' = [custom_seo:filter_price]'
+    ),
+    'custom_seo:product_num' => array(
+      t('Product number'),
+      ' = [custom_seo:product_num]'
+    ),
+    'custom_seo:product_num_psc' => array(
+      t('Product number with suffix pcs'),
+      ' = [custom_seo:product_num_psc]'
+    ),
+  );
+  return $tokens_list;
+}
+
+function _custom_seo_get_page_catalog_tag($tag = 'title') {
+  $tag_value = '';
+  $custom_seo_set = _custom_seo_get_record();
+  $settings = array();
+  if (!empty($custom_seo_set->settings)) {
+    $settings = unserialize($custom_seo_set->settings);
+  }
+  if (!empty($settings[$tag]['template'])) {
+    $search = array(
+      "\n",
+    );
+    $replace = array('');
+    $template = trim(str_replace($search, $replace, filter_xss($settings[$tag]['template'], array())));
+    if (!empty($template) && module_exists('trade')) {
+      $catalog_filter_values = _trade_get_filters_values();
+      $current_path = request_path();
+      $catalog_term = trade_catalog_term_load($current_path);
+      $catalog_field = variable_get('trade_product_catalog_field', '');
+      if (!empty($catalog_field) && !empty($catalog_term)) {
+        $catalog_filter_values[$catalog_field][$catalog_term->tid] = $catalog_term;
+      }
+
+      $template_ex = explode('[field_', $settings[$tag]['template']);
+      $template_tokens = array();
+      if (is_array($template_ex) && !empty($template_ex)) {
+        foreach ($template_ex as $template_ex_field) {
+          $template_field_ex = explode(']', $template_ex_field);
+          if (!empty($template_field_ex[0])) {
+            $token = 'field_' . trim($template_field_ex[0]);
+            $template_tokens[$token] = $token;
+          }
+        }
+      }
+      if (!empty($template_tokens)) {
+        foreach ($template_tokens as $field_name => &$field) {
+
+          $filter_values = array();
+          $field = '';
+
+          if (!empty($catalog_filter_values[$field_name])) {
+
+            $filter_value_tmp_ = array();
+            $filter_value_tmp_full = '';
+            foreach ($catalog_filter_values[$field_name] as $key => $filter_key) {
+              $filter_value_tmp = '';
+              if (is_object($filter_key) && !empty($filter_key->name)) {
+                $filter_value_tmp = $filter_key->name;
+              }
+              else {
+                if (is_numeric($filter_key) && ($field_term = taxonomy_term_load($filter_key))) {
+                  $filter_value_tmp = $field_term->name;
+                }
+              }
+
+              if (!empty($filter_value_tmp)) {
+                $filter_value_tmp_[] = trim(str_replace('"', '', filter_xss($filter_value_tmp, array())));
+              }
+            }
+
+            if (!empty($filter_value_tmp_)) {
+              $filter_value_tmp_full = (count($filter_value_tmp_) > 1 && !empty($settings[$tag][$field_name]['be_mn']) ? $settings[$tag][$field_name]['be_mn'] . ' '
+                  : (!empty($settings[$tag][$field_name]['be']) ? $settings[$tag][$field_name]['be'] . ' ' : ''))
+                . implode(', ', $filter_value_tmp_)
+                . (!empty($settings[$tag][$field_name]['af']) ? ' ' . $settings[$tag][$field_name]['af'] : '');
+              $filter_values[] = trim(str_replace('"', '', filter_xss($filter_value_tmp_full, array())));
+            }
+
+            if (!empty($filter_values)) {
+              if (count($filter_values) > 1) {
+                $field = ' ' . implode(', ', $filter_values);
+              }
+              else {
+                $field = ' ' . current($filter_values);
+              }
+            }
+          }
+
+          //replace tokens
+          $template = str_replace('[' . $field_name . ']', $field, $template);
+        }
+      }
+    }
+
+    if (!empty($template)) {
+      if ($template = trim(str_replace(array(
+        '"',
+        '[',
+        ']',
+      ), '', filter_xss($template, array())))
+      ) {
+        $tag_value = $template;
+      }
+    }
+  }
+  return $tag_value;
+}
+
+function custom_seo_module_implements_alter(&$implementations, $hook) {
+  if ($hook == 'process_page') {
+    // Move my_module_rdf_mapping() to the end of the list. module_implements()
+    // iterates through $implementations with a foreach loop which PHP iterates
+    // in the order that the items were added, so to move an item to the end of
+    // the array, we remove it and then add it.
+    $group = $implementations ['custom_seo'];
+    unset($implementations ['custom_seo']);
+    $implementations ['custom_seo'] = $group;
+  }
+}
+
+function _custom_seo_get_record($path = 'catalog') {
+  $record = FALSE;
+  if (db_table_exists('custom_seo')) {
+    $record = db_query("SELECT * FROM {custom_seo} WHERE path = :p", array(':p' => $path))->fetchObject();
+  }
+  return $record;
+}
+
+function _custom_seo_get_get_available_tags() {
+  return array('title', 'h1');
+}
+
+function custom_seo_custom_settings_form($form, &$form_state, $cid = 0) {
+  $path = current_path();
+  $custom_seo = _custom_seo_get_record($path);
+
+  $custom_seo_catalog_filter_settings = custom_seo_get_trade_catalog_filter_settings();
+  $tokens = array();
+
+  if (!empty($custom_seo_catalog_filter_settings)) {
+    foreach ($custom_seo_catalog_filter_settings as $field => $set) {
+      $tokens[] = '[' . $field . ']';
+    }
+  }
+
+
+  if (!empty($custom_seo->cid)) {
+    $cid = $custom_seo->cid;
+  }
+  $form['#prefix'] = '<div class="custom-seo-custom-wr"><div class="custom-seo-custom-inner">';
+  $form['#suffix'] = '</div><a class="custom-seo-custom-switch" href="#">Custom SEO</a></div>';
+  $form['#attributes'] = array('class' => array('custom-seo-custom'));
+
+  $form['path'] = array(
+    '#type' => 'hidden',
+    '#value' => $path,
+  );
+
+  $form['cid'] = array(
+    '#type' => 'hidden',
+    '#value' => $cid,
+  );
+  $token_template = implode('', $tokens);
+
+  if (!empty($custom_seo->settings)) {
+    $set_value = unserialize($custom_seo->settings);
+  }
+  else {
+    $set_value = array();
+  }
+  foreach (_custom_seo_get_get_available_tags() as $key) {
+    $form[$key] = array(
+      '#prefix' => '<fieldset class="custom-seo-trigger-wr custom-seo-trigger-wr-close"><legend>' . $key . '</legend><div class="custom-seo-trigger-container">',
+      '#suffix' => '</div></fieldset>',
+      '#tree' => TRUE,
+    );
+
+    foreach ($custom_seo_catalog_filter_settings as $field => $set) {
+      $field_token = "[{$field}]";
+      $form[$key][$field] = array(
+        '#prefix' => '<fieldset class="custom-seo-trigger-wr custom-seo-trigger-wr-close custom-seo-field-settings"><legend title="' . $field_token . '">' . $set['label'] . '</legend><div class="custom-seo-trigger-container custom-seo-field-element-inline">',
+        '#suffix' => '</div></fieldset>',
+      );
+      $form[$key][$field]['be'] = array(
+        '#type' => 'textfield',
+        '#title' => $field_token . ' = ',
+        '#size' => 15,
+        '#maxlength' => 60,
+        '#default_value' => isset($set_value[$key][$field]['be']) ? $set_value[$key][$field]['be'] : drupal_strtolower($set['label'])
+      );
+      $form[$key][$field]['be_mn'] = array(
+        '#type' => 'textfield',
+        '#title' => t('many'),
+        '#size' => 15,
+        '#maxlength' => 60,
+        '#default_value' => isset($set_value[$key][$field]['be']) ? $set_value[$key][$field]['be_mn'] : drupal_strtolower($set['label'])
+      );
+      $form[$key][$field]['af'] = array(
+        '#type' => 'textfield',
+        '#title' => t('value'),
+        '#size' => 15,
+        '#maxlength' => 60,
+        '#default_value' => isset($set_value[$key][$field]['af']) ? $set_value[$key][$field]['af'] : ''
+      );
+    }
+
+    if (isset($set_value[$key]['template'])) {
+      $default_value = $set_value[$key]['template'];
+    }
+    elseif (!empty($token_template)) {
+      $default_value = $token_template;
+    }
+    else {
+      $default_value = '';
+    }
+    $form[$key]['template'] = array(
+      '#type' => 'textarea',
+      '#title' => t('Template'),
+      '#rows' => 3,
+      '#default_value' => $default_value,
+    );
+  }
+  $form['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Save'),
+  );
+  return $form;
+}
+
+function custom_seo_get_trade_catalog_filter_settings() {
+  $settings = &drupal_static(__FUNCTION__);
+
+  if (!isset($settings)) {
+    $settings = array();
+    if (module_exists('trade')) {
+      if ($catalog_field = variable_get('trade_product_catalog_field', '')) {
+        $settings[$catalog_field] = $catalog_field;
+      }
+      module_load_include('pages.inc', 'trade');
+      $field_ii = field_info_instances('node');
+      $field_map = field_info_field_map();
+      $catalog_filters_ = $settings + _trade_catalog_get_filters();
+      foreach ($catalog_filters_ as $field) {
+        $set = array();
+        if (!strpos($field, '__from') && !strpos($field, '__to')) {
+          if (isset($field_map[$field]['type'])) {
+            $set['type'] = $field_map[$field]['type'];
+            if (!empty($field_map[$field]['bundles']['node'][0]) && isset($field_ii[$field_map[$field]['bundles']['node'][0]][$field]['label'])) {
+              $set['label'] = $field_ii[$field_map[$field]['bundles']['node'][0]][$field]['label'];
+            }
+          }
+        }
+        if (!empty($set)) {
+          $settings[$field] = $set;
+        }
+      }
+    }
+  }
+  return $settings;
+}
+
+function custom_seo_preprocess_html(&$variables) {
+  global $language;
+  if (!empty($variables['page']) && !path_is_admin(current_path()) && _custom_seo_custom_use_this_path()) {
+    if (user_access('administer site configuration')) {
+      drupal_add_js(drupal_get_path('module', 'custom_seo') . '/custom_seo.js');
+      drupal_add_css(drupal_get_path('module', 'custom_seo') . '/custom_seo.css');
+    }
+  }
+  // Add the 'edge' meta tag.
+//  $meta = array(
+//    '#tag' => 'meta',
+//    '#attributes' => array(
+//      'http-equiv' => 'X-UA-Compatible',
+//      'content' => 'IE=edge'
+//    ),
+//  );
+//  drupal_add_html_head($meta, 'custom_seo_edge');
+}
+
+function _custom_seo_custom_use_this_path() {
+  $use = FALSE;
+  if (current_path() == 'catalog') {
+    $use = TRUE;
+  }
+  return $use;
+}
+
+function custom_seo_custom_settings_form_submit($form, &$form_state) {
+  $tags_set_keys = _custom_seo_get_get_available_tags();
+  $tags_set = array_intersect_key($form_state['values'], array_combine($tags_set_keys, $tags_set_keys));
+  if (!empty($tags_set)) {
+    $record = array(
+      'path' => $form_state['values']['path'],
+      'settings' => serialize($tags_set),
+    );
+
+    if ($form_state['values']['cid']) {
+      $record['cid'] = $form_state['values']['cid'];
+      $primary_keys = array('cid');
+    }
+    else {
+      $primary_keys = array();
+    }
+
+    drupal_write_record('custom_seo', $record, $primary_keys);
+    cache_clear_all('*', 'cache_page', TRUE);
+  }
+}

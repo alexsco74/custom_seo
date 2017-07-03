@@ -1,0 +1,111 @@
+.custom-seo-custom-field {
+    padding: .5em 0;
+}
+
+.custom-seo-custom .form-item-source .form-textarea-wrapper {
+    display: none;
+}
+
+.custom-seo-custom .form-text {
+    max-width: 100%;
+}
+
+a.custom-seo-custom-switch {
+    position: absolute;
+    width: 150px;
+    margin-right: -150px;
+    top: 0;
+    right: 0;
+    background: rgba(187, 187, 187, 0.7);
+    padding: .7em 0;
+    border-radius: 0 4px 4px 0;
+    -moz-border-radius: 0 4px 4px 0;
+    -webkit-border-radius: 0 4px 4px 0;
+    color: #ffffff !important;
+    text-decoration: none !important;
+    text-align: center;
+}
+
+.custom-seo-field-element-inline * {
+    display: inline !important;
+}
+
+a.custom-seo-custom-switch:hover {
+    text-decoration: none !important;
+}
+
+.custom-translator-was-translate-wr {
+    background: rgba(187, 187, 187, 0.7);
+}
+
+.custom-translator-was-translate-wr .custom-translator-was-translate-translation {
+    display: none;
+}
+
+.custom-translator-was-translate-wr .custom-translator-was-translate-source:hover {
+    cursor: pointer;
+}
+
+.custom-seo-custom-wr {
+    position: fixed;
+    left: -30%;
+    top: 50px;
+    width: 30%;
+    background: rgba(187, 187, 187, 0.7);
+    z-index: 9;
+    -webkit-transition: all 0.5s ease-out;
+    -moz-transition: all 0.5s ease-out;
+    -ms-transition: all 0.5s ease-out;
+    -o-transition: all 0.5s ease-out;
+    transition: all 0.5s ease-out;
+    border-radius: 0 0 4px 0;
+    -moz-border-radius: 0 0 4px 0;
+    -webkit-border-radius: 0 0 4px 0;
+}
+
+.custom-seo-custom-wr.custom-seo-custom-open {
+    left: 0;
+}
+
+.custom-seo-custom-inner {
+    padding: 1em;
+}
+
+.custom-seo-trigger-wr {
+    margin-bottom: 1em;
+    border: 1px solid transparent;
+}
+
+.custom-seo-field-settings {
+    margin-bottom: 0;
+}
+
+.custom-seo-trigger-wr.custom-seo-trigger-wr-close {
+    display: inline;
+}
+
+.custom-seo-trigger-wr > legend {
+    border-bottom: 1px dotted #fff;
+    color: #fff;
+    padding: 0 .25em;
+}
+
+.custom-seo-trigger-wr.custom-seo-trigger-wr-close > legend {
+    color: #555;
+}
+
+.custom-seo-trigger-wr > legend:hover {
+    cursor: pointer;
+}
+
+.custom-seo-trigger-container {
+    display: inline;
+}
+
+.custom-seo-trigger-wr-close .custom-seo-trigger-container {
+    display: none;
+}
+
+.custom-seo-custom-settings-form .form-submit {
+    display: block;
+}
